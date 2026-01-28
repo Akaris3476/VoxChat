@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: ./VoxChat.API/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5274
+      - ConnectionStrings__Redis=redis:6379
+    ports:
+      - "5274:5274"
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: ./VoxChat.Frontend 
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:5173
+    depends_on:
+      - backend
+
+  
+  redis:
+    image: redis:alpine
+    container_name: redis_cache
