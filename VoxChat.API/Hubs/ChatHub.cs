@@ -1,7 +1,8 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Caching.Distributed;
 using VoxChat.API.Models;
+using VoxChat.Application.Interfaces;
+using VoxChat.Application.Models;
 
 namespace VoxChat.API.Hubs;
 
@@ -15,17 +16,12 @@ public interface IChatClient
 
 public class ChatHub : Hub<IChatClient>
 {
-	private readonly IDistributedCache _cache;
 
-	public DistributedCacheEntryOptions ChatExpirationOptions { get; } = new DistributedCacheEntryOptions()
-		.SetAbsoluteExpiration(TimeSpan.FromMinutes(40));
-	public DistributedCacheEntryOptions ChatMembersExpirationOptions { get; } = new DistributedCacheEntryOptions()
-		.SetAbsoluteExpiration(TimeSpan.FromMinutes(180));
+	private IChatHubService _chatHubService;
 	
-	
-	public ChatHub(IDistributedCache cache)
+	public ChatHub(IChatHubService chatHubService)
 	{
-		_cache = cache;
+		_chatHubService = chatHubService;
 	}
 	
 	
@@ -34,8 +30,7 @@ public class ChatHub : Hub<IChatClient>
 	{
 		await Groups.AddToGroupAsync(Context.ConnectionId, connection.Chatroom);
 		
-		string stringConnection = JsonSerializer.Serialize(connection);
-		await _cache.SetStringAsync(Context.ConnectionId, stringConnection);
+		await _chatHubService.AddConnectionAsync(Context.ConnectionId, connection);
 		
 		await AddChatMember(connection.Username);
 
@@ -47,103 +42,50 @@ public class ChatHub : Hub<IChatClient>
 
 	public async Task AddChatMember(string username)
 	{
-		string? chatMembers =  await _cache.GetStringAsync(await  GetGroupNameAsync() + "-chatmembers");
-		
-		if (chatMembers is null)
-		{
-			List<string> initialList = new List<string>();
-			initialList.Add(username);
-			string initialListSerialized = JsonSerializer.Serialize(initialList);
-			await _cache.SetStringAsync(await  GetGroupNameAsync() + "-chatmembers", initialListSerialized, ChatMembersExpirationOptions);
-			return;
-		}
+		string groupName = await GetGroupNameAsync();
+		List<string> chatMembers = await _chatHubService.GetGroupListAsync<string>(groupName, ChatKeys.ChatMembers);
 
-		List<string> chatMembersList = JsonSerializer.Deserialize<List<string>>(chatMembers)!;
-		chatMembersList.Add(username);
-		
-		string chatMembersSerialized = JsonSerializer.Serialize(chatMembersList);
-		await _cache.SetStringAsync(await  GetGroupNameAsync() + "-chatmembers", chatMembersSerialized, ChatMembersExpirationOptions);
 
+		await _chatHubService.AddItemToGroupListAsync(groupName, ChatKeys.ChatMembers, username);
+		
 	}
 
 	public async Task RemoveChatMember(string username)
 	{
-		string? chatMembers = await _cache.GetStringAsync(await  GetGroupNameAsync() + "-chatmembers");
+		string groupName = await GetGroupNameAsync();
+		List<string> chatMembers = await _chatHubService.RemoveItemFromGroupListAsync(groupName, ChatKeys.ChatMembers, username);
 
-		if (chatMembers is not null)
-		{
-			List<string> chatMembersList = JsonSerializer.Deserialize<List<string>>(chatMembers)!;
-			chatMembersList.Remove(username);
-
-			string chatMembersSerialized = JsonSerializer.Serialize(chatMembersList);
-			await _cache.SetStringAsync(await  GetGroupNameAsync() + "-chatmembers", chatMembersSerialized, ChatMembersExpirationOptions);
-			
-			await Clients.Group(await GetGroupNameAsync()).GetChatMembersList(chatMembersList);
-
-
-		}
+		
+		if (chatMembers.Count > 0)
+			await Clients.Group(await GetGroupNameAsync()).GetChatMembersList(chatMembers);
 		
 	}
 	
 	public async Task<List<string>> RetrieveChatMembersList()
 	{
-		string? chatMembers =  await _cache.GetStringAsync(await  GetGroupNameAsync() + "-chatmembers");
-
-		if (chatMembers is null)
-		{
-			string emptyList = JsonSerializer.Serialize(new List<string>());
-			await _cache.SetStringAsync(await  GetGroupNameAsync() + "-chatmembers", emptyList, ChatMembersExpirationOptions);
-			return new List<string>();
-		}
 		
-		return JsonSerializer.Deserialize<List<string>>(chatMembers)!;
+		string groupName = await GetGroupNameAsync();
+		return await _chatHubService.GetGroupListAsync<string>(groupName, ChatKeys.ChatMembers);
+		
 	}
 	
 	private async Task<List<ChatMessage>> RetrieveChatLog()
 	{
 		
-		string? chatlog = await _cache.GetStringAsync(await GetGroupNameAsync() + "-chatlog");
-
-		if (chatlog is null)
-		{
-			string emptyList = JsonSerializer.Serialize(new List<ChatMessage>()); 
-			await _cache.SetStringAsync(await GetGroupNameAsync() + "-chatlog", emptyList, ChatExpirationOptions);
-			return new List<ChatMessage>();
-		}
-		
-		
-		return JsonSerializer.Deserialize<List<ChatMessage>>(chatlog)!;
-	}
-
-	private async Task<string> GetGroupNameAsync()
-	{
-		string? stringConnection = await _cache.GetStringAsync(Context.ConnectionId);
-		
-		UserConnection? connection;
-		try
-		{
-			connection = JsonSerializer.Deserialize<UserConnection>(stringConnection!);
-		}
-		catch (Exception)
-		{
-			connection = null;
-		}
-		
-		if (connection is not null)
-		{
-			return connection.Chatroom;
-		}
-		else
-		{
-			return string.Empty;
-		}
+		string groupName = await GetGroupNameAsync();
+		return await _chatHubService.GetGroupListAsync<ChatMessage>(groupName, ChatKeys.ChatLog);
 		
 	}
+
+	private async Task<string> GetGroupNameAsync() 
+		=> (await _chatHubService
+			   .GetConnectionAsync(Context.ConnectionId))?.Chatroom ?? string.Empty;
+
 	
 	public async Task SendMessage(string message)
 	{
 
-		UserConnection? connection = await GetCachedUserConnection();
+		UserConnection? connection = await _chatHubService.GetConnectionAsync(Context.ConnectionId);
 		
 		if (connection is not null)
 		{
@@ -156,35 +98,17 @@ public class ChatHub : Hub<IChatClient>
 		
 		
 	}
-
-	private async Task<UserConnection?> GetCachedUserConnection()
-	{
-		string? stringConnection = await _cache.GetStringAsync(Context.ConnectionId);
-		
-		UserConnection? connection;
-		try
-		{
-			connection = JsonSerializer.Deserialize<UserConnection>(stringConnection!);
-		}
-		catch (Exception)
-		{
-			connection = null;
-		}
-		
-		return connection;
-	}
+	
 	
 	private async Task ReceiveMessage(UserConnection connection, string message)
 	{
 		try
 		{
-			string chatlog = (await _cache.GetStringAsync(await GetGroupNameAsync() + "-chatlog"))!;
+			string groupName = await GetGroupNameAsync();
+			ChatMessage msg = new(connection.Username, message);
+				
+			await _chatHubService.AddItemToGroupListAsync(groupName, ChatKeys.ChatLog, msg);
 			
-			List<ChatMessage> chatMessages = JsonSerializer.Deserialize<List<ChatMessage>>(chatlog)!;
-			chatMessages.Add(new ChatMessage(connection.Username, message));
-			chatlog = JsonSerializer.Serialize(chatMessages);
-			
-			await _cache.SetStringAsync(await GetGroupNameAsync() + "-chatlog", chatlog, ChatExpirationOptions);
 		}
 		catch (Exception e)
 		{
@@ -200,7 +124,7 @@ public class ChatHub : Hub<IChatClient>
 
 	public async Task SendPeer(string peerId)
 	{
-		UserConnection? connection = await GetCachedUserConnection();
+		UserConnection? connection = await _chatHubService.GetConnectionAsync(Context.ConnectionId);
 		
 		if (connection is not null)
 		{
@@ -215,63 +139,42 @@ public class ChatHub : Hub<IChatClient>
 	
 	public async Task<List<string>> RetrievePeersList()
 	{
-		string? peers =  await _cache.GetStringAsync(await  GetGroupNameAsync() + "-peers");
-
-		if (peers is null)
-		{
-			string emptyList = JsonSerializer.Serialize(new List<string>());
-			await _cache.SetStringAsync(await  GetGroupNameAsync() + "-peers", emptyList, ChatMembersExpirationOptions);
-			return new List<string>();
-		}
 		
-		return JsonSerializer.Deserialize<List<string>>(peers)!;
+		string groupName = await GetGroupNameAsync();
+		return await _chatHubService.GetGroupListAsync<string>(groupName, ChatKeys.Peers);
+
 	}
 	
 	public async Task AddPeer(string peerId)
 	{
-		await _cache.SetStringAsync(Context.ConnectionId + "-peer", peerId, ChatMembersExpirationOptions);
+		await _chatHubService.AddAsync(Context.ConnectionId, ChatKeys.Peer, peerId);
 		
-		string? peerIds =  await _cache.GetStringAsync(await  GetGroupNameAsync() + "-peers");
-		
-		if (peerIds is null)
-		{
-			List<string> initialList = new List<string>();
-			initialList.Add(peerId);
-			string initialListSerialized = JsonSerializer.Serialize(initialList);
-			await _cache.SetStringAsync(await  GetGroupNameAsync() + "-peers", initialListSerialized, ChatMembersExpirationOptions);
-			return;
-		}
+		string groupName = await GetGroupNameAsync();
+		List<string> peerIds = await _chatHubService.GetGroupListAsync<string>(groupName, ChatKeys.Peers);
 
-		List<string> peersList = JsonSerializer.Deserialize<List<string>>(peerIds)!;
-		peersList.Add(peerId);
+
+		await _chatHubService.AddItemToGroupListAsync(groupName, ChatKeys.Peers, peerId);
 		
-		string peersSerialized = JsonSerializer.Serialize(peersList);
-		await _cache.SetStringAsync(await  GetGroupNameAsync() + "-peers", peersSerialized, ChatMembersExpirationOptions);
+		if (peerIds.Count == 0)
+			return;
+
 		
-		await Clients.Group(await GetGroupNameAsync())
-			.ReceivePeer(peersList);
+		await Clients.Group(groupName)
+			.ReceivePeer(peerIds);
 
 	}
 
 	public async Task RemovePeer(string peerId)
 	{
-		await _cache.RemoveAsync(Context.ConnectionId + "-peer");
+		await _chatHubService.RemoveAsync(Context.ConnectionId, ChatKeys.Peer);
 
-		string? peerIds = await _cache.GetStringAsync(await  GetGroupNameAsync() + "-peers");
+		string groupName = await GetGroupNameAsync();
+		List<string> peers = await _chatHubService.RemoveItemFromGroupListAsync(groupName,  ChatKeys.Peers, peerId);
+		
 
-		if (peerIds is not null)
-		{
-			List<string> peersList = JsonSerializer.Deserialize<List<string>>(peerIds)!;
-			peersList.Remove(peerId);
-
-			string peersSerialized = JsonSerializer.Serialize(peersList);
-			await _cache.SetStringAsync(await  GetGroupNameAsync() + "-peers", peersSerialized, ChatMembersExpirationOptions);
-			
-			await Clients.Group(await GetGroupNameAsync())
-				.ReceivePeer(peersList);
-
-
-		}
+		if (peers.Count > 0)
+			await Clients.Group(groupName)
+				.ReceivePeer(peers);
 		
 	}
 	
@@ -281,36 +184,30 @@ public class ChatHub : Hub<IChatClient>
 	{
 		try
 		{
-			string? stringConnection = await _cache.GetStringAsync(Context.ConnectionId);
 
+			UserConnection? connection = await _chatHubService.GetConnectionAsync(Context.ConnectionId);
 			
-			if (stringConnection is null)
+			if (connection is null)
 			{
-				Console.WriteLine("failed to exctract stringConnection on disconnect");
+				Console.WriteLine("failed to get UserConnection on disconnect");
 			}
 			else
 			{
-				UserConnection? connection = JsonSerializer.Deserialize<UserConnection>(stringConnection);
+				
+				string peerId = await _chatHubService.GetStringAsync(Context.ConnectionId, ChatKeys.Peer);
 
-				if (connection is not null)
-				{
-					string? peerId = await _cache.GetStringAsync(Context.ConnectionId + "-peer");
+				if (!string.IsNullOrEmpty(peerId))
+					await RemovePeer(peerId);
+				
+				
+				await ReceiveMessage(connection, $"{connection.Username} left the chatroom.");
 
-					if (peerId is not null)
-						await RemovePeer(peerId);
-					
-					
-					await ReceiveMessage(connection, $"{connection.Username} left the chatroom.");
+				await RemoveChatMember(connection.Username);
+				
+				await _chatHubService.RemoveConnectionAsync(Context.ConnectionId);
 
-					await RemoveChatMember(connection.Username);
-					
-					await _cache.RemoveAsync(Context.ConnectionId);
-
-					await Groups.RemoveFromGroupAsync(Context.ConnectionId, connection.Chatroom);
-
-
-
-				}
+				await Groups.RemoveFromGroupAsync(Context.ConnectionId, connection.Chatroom);
+				
 			}
 		}
 		finally

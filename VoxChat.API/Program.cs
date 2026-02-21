@@ -1,4 +1,6 @@
 using VoxChat.API.Hubs;
+using VoxChat.Application.Interfaces;
+using VoxChat.Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,11 +16,14 @@ builder.Services.AddCors(options =>
 	options.AddDefaultPolicy(policy => 
 		policy
 			.WithOrigins("http://localhost:5173", "https://localhost:5173")
+			// Also here could be frontend url from azure
 			.AllowAnyMethod()
 			.AllowAnyHeader()
 			.AllowCredentials()
 		);
 });
+
+builder.Services.AddScoped<IChatHubService, ChatHubService>();
 
 builder.Services.AddControllers();
 
