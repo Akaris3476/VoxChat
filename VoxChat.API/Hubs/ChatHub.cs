@@ -150,10 +150,10 @@ public class ChatHub : Hub<IChatClient>
 		await _chatHubService.AddAsync(Context.ConnectionId, ChatKeys.Peer, peerId);
 		
 		string groupName = await GetGroupNameAsync();
-		List<string> peerIds = await _chatHubService.GetGroupListAsync<string>(groupName, ChatKeys.Peers);
+		await _chatHubService.GetGroupListAsync<string>(groupName, ChatKeys.Peers);
 
 
-		await _chatHubService.AddItemToGroupListAsync(groupName, ChatKeys.Peers, peerId);
+		 List<string> peerIds = await _chatHubService.AddItemToGroupListAsync(groupName, ChatKeys.Peers, peerId);
 		
 		if (peerIds.Count == 0)
 			return;
