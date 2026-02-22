@@ -47,7 +47,7 @@ export function VideoChat({className, currentUserVideoRef, peersId, remoteVideoR
                             poster={placeholder}/>
                 </div>
 
-                <h1>{myPeerId}</h1>
+                {/*<h1>{myPeerId}</h1>*/}
                 {otherPeerIds.map((peerId) => (
                     <video key={peerId}
                            autoPlay playsInline
