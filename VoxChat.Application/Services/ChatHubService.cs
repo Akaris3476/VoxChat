@@ -135,12 +135,12 @@ public class ChatHubService : IChatHubService
 	public async Task<List<T>> GetGroupListAsync<T>(string groupName, ChatKeys key)
 	{
 		string listKey = key.ToString().ToLower();
-		string? chatMembers =  await _cache.GetStringAsync(groupName + "-" + listKey);
+		string? listSerialized =  await _cache.GetStringAsync(groupName + "-" + listKey);
 
-		if (chatMembers is null)
+		if (listSerialized is null)
 			return await AddEmptyListAsync<T>(groupName, key);
 		
-		return JsonSerializer.Deserialize<List<T>>(chatMembers)!;
+		return JsonSerializer.Deserialize<List<T>>(listSerialized)!;
 		
 	}
 	
@@ -159,8 +159,8 @@ public class ChatHubService : IChatHubService
 	
 	public async Task AddConnectionAsync(string connectionId, UserConnection connection)
 	{
-		string stringConnection = JsonSerializer.Serialize(connection);
-		await _cache.SetStringAsync(connectionId, stringConnection);
+		string connectionSerialized = JsonSerializer.Serialize(connection);
+		await _cache.SetStringAsync(connectionId, connectionSerialized);
 		
 		
 	}
@@ -168,14 +168,14 @@ public class ChatHubService : IChatHubService
 	public async Task<UserConnection?> GetConnectionAsync(string connectionId)
 	{
 		
-		string? stringConnection = await _cache.GetStringAsync(connectionId);
+		string? connectionSerialized = await _cache.GetStringAsync(connectionId);
 		
 		UserConnection? connection;
 
-		if (stringConnection is null)
+		if (connectionSerialized is null)
 			return null;
 		
-		connection = JsonSerializer.Deserialize<UserConnection>(stringConnection);
+		connection = JsonSerializer.Deserialize<UserConnection>(connectionSerialized);
 
 		return connection;
 
