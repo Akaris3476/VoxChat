@@ -57,7 +57,7 @@ public class ChatHub : Hub<IChatClient>
 
 		
 		if (chatMembers.Count > 0)
-			await Clients.Group(await GetGroupNameAsync()).GetChatMembersList(chatMembers);
+			await Clients.Group(groupName).GetChatMembersList(chatMembers);
 		
 	}
 	

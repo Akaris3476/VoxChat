@@ -42,7 +42,6 @@ public class ChatHubServiceTest
 
 		
 		
-		
 		List<string> updatedList = await _chatHubService.AddItemToGroupListAsync(groupName, key, newChatMember);
 
 		Assert.Contains(newChatMember, updatedList);
@@ -73,7 +72,6 @@ public class ChatHubServiceTest
 
 		
 		
-		
 		List<string> updatedList = await _chatHubService.AddItemToGroupListAsync(groupName, key, newChatMember);
 
 		_cacheMock.Verify(cache => cache.SetAsync(
@@ -99,9 +97,8 @@ public class ChatHubServiceTest
 		
 		_cacheMock.Setup(cache => cache.GetAsync(cacheKey, new CancellationToken()))
 			.ReturnsAsync(() => null);
-
-
-
+		
+		
 
 		List<string> updatedList = await _chatHubService.AddItemToGroupListAsync(groupName, key, newChatMember);
 
@@ -130,7 +127,6 @@ public class ChatHubServiceTest
 		
 		_cacheMock.Setup(cache => cache.GetAsync(cacheKey, new CancellationToken()))
 			.ReturnsAsync(() => null);
-		
 		
 		
 		List<T> updatedList = await _chatHubService.AddItemToGroupListAsync(groupName, key, item);
@@ -228,7 +224,6 @@ public class ChatHubServiceTest
 
 		
 		
-		
 		List<string> updatedList = await _chatHubService.RemoveItemFromGroupListAsync(groupName, key, chatMemberToDelete);
 
 		Assert.DoesNotContain(chatMemberToDelete, updatedList);
@@ -258,7 +253,6 @@ public class ChatHubServiceTest
 		_cacheMock.Setup(cache => cache.GetAsync(cacheKey, new CancellationToken()))
 			.ReturnsAsync(() => chatMembersSerializedBytes);
 
-		
 		
 		
 		List<string> updatedList = await _chatHubService.RemoveItemFromGroupListAsync(groupName, key, chatMemberToDelete);
@@ -293,7 +287,6 @@ public class ChatHubServiceTest
 
 		
 		
-		
 		List<string> updatedList = await _chatHubService.GetGroupListAsync<string>(groupName, key);
 
 		
@@ -316,7 +309,6 @@ public class ChatHubServiceTest
 		_cacheMock.Setup(cache => cache.GetAsync(cacheKey, new CancellationToken()))
 			.ReturnsAsync(() => null);
 
-		
 		
 		List<string> updatedList = await _chatHubService.GetGroupListAsync<string>(groupName, key);
 
@@ -380,10 +372,9 @@ public class ChatHubServiceTest
 		byte[] connectionSerializedBytes = Encoding.UTF8.GetBytes(connectionSerialized);
 		_cacheMock.Setup(cache => cache.GetAsync(connectionId, new CancellationToken()))
 			.ReturnsAsync(() => connectionSerializedBytes);
-
-
 		
-		UserConnection receivedConnection = await _chatHubService.GetConnectionAsync(connectionId);
+		
+		UserConnection receivedConnection = (await _chatHubService.GetConnectionAsync(connectionId))!;
 		
 		Assert.True(receivedConnection == connection);
 	}
