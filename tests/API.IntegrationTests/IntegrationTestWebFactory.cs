@@ -41,6 +41,6 @@ public class IntegrationTestWebFactory : WebApplicationFactory<Program>, IAsyncL
 	public new async  Task DisposeAsync()
 	{
 		await base.DisposeAsync();
-		await _redisContainer.StopAsync();
+		await _redisContainer.DisposeAsync();
 	}
 }
