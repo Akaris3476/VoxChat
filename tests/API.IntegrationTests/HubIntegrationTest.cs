@@ -1,6 +1,9 @@
 ﻿using FluentAssertions;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 using VoxChat.API.Models;
+using VoxChat.Application.Interfaces;
+using VoxChat.Application.Models;
 
 namespace API.IntegrationTests;
 
@@ -110,7 +113,7 @@ public class HubIntegrationTest : IClassFixture<IntegrationTestWebFactory>
 		await client.InvokeAsync("JoinChat", testUser);
 		
 		List<string> receivedMessages = new();
-		client.On<string, string>("ReceiveMessage", (user, msg) 
+		client.On<string, string>("ReceiveMessage", (_, msg) 
 			=> receivedMessages.Add(msg));
 		
 		
@@ -167,4 +170,93 @@ public class HubIntegrationTest : IClassFixture<IntegrationTestWebFactory>
 
 	}
 	
+	
+	[Fact]
+	public async Task TwoClients_ShouldGetCorrectPeerList()
+	{
+		List<string> peerList = new();
+		List<string> peerList2 = new();
+		
+		var handler = _factory.Server.CreateHandler();
+		var client = new HubConnectionBuilder()
+			.WithUrl("http://localhost:5274/chat", o => o.HttpMessageHandlerFactory = _ => handler)
+			.Build();
+		
+		UserConnection testUser = new("User1", "testroom5");
+		
+		await client.StartAsync();
+		await client.InvokeAsync("JoinChat", testUser);
+		client.On<List<string>>("ReceivePeer", (peers) 
+			=> peerList = new(peers));
+		string peer1 = "gdag32gh2qg";
+		await client.InvokeAsync("SendPeer", peer1);
+		
+		await Task.Delay(200);
+
+		var client2 = new HubConnectionBuilder()
+			.WithUrl("http://localhost:5274/chat", o => o.HttpMessageHandlerFactory = _ => handler)
+			.Build();
+		
+		UserConnection testUser2 = new("User2", "testroom5");
+
+		await client2.StartAsync();
+		await client2.InvokeAsync("JoinChat", testUser2);
+		
+		client.On<List<string>>("ReceivePeer", (peers) 
+			=> peerList2 = new(peers));
+		
+		string peer2 = "gaehgewyh43";
+		await client2.InvokeAsync("SendPeer", peer2);
+		
+		
+		
+		await Task.Delay(400);
+		peerList.Count.Should().Be(2);
+		peerList[0].Should().Be(peer1);
+		peerList[1].Should().Be(peer2);
+		peerList.Should().BeEquivalentTo(peerList2);
+
+	}
+	
+	[Fact]
+	public async Task Clinet_ShouldRemoveSavedData_OnDisconnect()
+	{
+
+		var handler = _factory.Server.CreateHandler();
+		var client = new HubConnectionBuilder()
+			.WithUrl("http://localhost:5274/chat", o => o.HttpMessageHandlerFactory = _ => handler)
+			.Build();
+		
+		UserConnection testUser = new("User1", "testroom6");
+		
+		
+		await client.StartAsync();
+		await client.InvokeAsync("JoinChat", testUser);
+		string connectionId = client.ConnectionId!;
+		string peer1 = "gdag32gh2qg";
+		await client.InvokeAsync("SendPeer", peer1);
+
+		
+		await client.StopAsync();
+		
+		
+		await Task.Delay(400);
+		
+		var scope = _factory.Services.CreateScope();	
+		var chatHubService = scope.ServiceProvider.GetRequiredService<IChatHubService>();
+		
+		List<string> chatMembers = await chatHubService
+			.GetGroupListAsync<string>(testUser.Chatroom, ChatKeys.ChatMembers);
+		chatMembers.Count.Should().Be(0);
+
+		string peerId = await chatHubService
+			.GetStringAsync(connectionId, ChatKeys.Peer);
+		peerId.Should().BeEmpty();
+
+		UserConnection? connection = await chatHubService
+			.GetConnectionAsync(connectionId);
+		connection.Should().BeNull();
+		
+		
+	}
 }
